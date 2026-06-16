@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scanners import run_all
+from compliance import FRAMEWORKS, enrich
+from dashboard.report import build_html
 
 REPORTS_DIR = Path(__file__).resolve().parent / "reports"
 
@@ -22,17 +24,22 @@ def main():
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "compliance_score": compute_score(results),
-        "checks": [r.to_dict() for r in results],
+        "frameworks": FRAMEWORKS,
+        "checks": [enrich(r.to_dict()) for r in results],
     }
 
     REPORTS_DIR.mkdir(exist_ok=True)
-    output_path = REPORTS_DIR / "scan_results.json"
-    output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    json_path = REPORTS_DIR / "scan_results.json"
+    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    html_path = REPORTS_DIR / "results.html"
+    html_path.write_text(build_html(report), encoding="utf-8")
 
     print(f"Compliance score: {report['compliance_score']}%")
     for result in results:
         print(f"  [{result.status.upper():5}] {result.name}")
-    print(f"\nFull report written to {output_path}")
+    print(f"\nJSON report:  {json_path}")
+    print(f"HTML report:  {html_path}")
 
 
 if __name__ == "__main__":

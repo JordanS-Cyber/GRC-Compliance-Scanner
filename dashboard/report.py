@@ -1,0 +1,232 @@
+"""Render a scan report (the dict main.py builds) into a standalone HTML page.
+
+The whole report is embedded as JSON inside the page and rendered client-side,
+so the output is a single self-contained file with no server and no external
+assets — it can be opened locally or emailed as-is. All the "why did this fail"
+and "what does the device comply with" logic lives in the browser code below.
+"""
+
+import json
+
+
+def build_html(report: dict) -> str:
+    # Embed the report as JSON. The </ escape stops any literal "</script>" in
+    # the data from prematurely closing the inline script tag.
+    data_json = json.dumps(report).replace("</", "<\\/")
+    return _TEMPLATE.replace("/*__REPORT_DATA__*/null", data_json)
+
+
+_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GRC Compliance Report</title>
+<style>
+  :root {
+    --bg: #0f1521; --panel: #18202f; --panel-2: #1f2a3d; --line: #2b3850;
+    --text: #e6ecf5; --muted: #93a1b8;
+    --pass: #2ecc71; --fail: #ff5c6c; --error: #c9a227; --accent: #4d8dff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 20px 64px; }
+  header.top { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 8px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+  .score {
+    margin-left: auto; text-align: center; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px 22px;
+  }
+  .score .num { font-size: 34px; font-weight: 700; line-height: 1; }
+  .score .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 20px; }
+  .tab {
+    background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+    padding: 8px 14px; border-radius: 999px; cursor: pointer; font-size: 13px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .hint { color: var(--muted); font-size: 13px; margin: -8px 0 18px; }
+  .bar { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; margin: 10px 0 22px; }
+  .bar > span { display: block; height: 100%; background: var(--pass); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 14px;
+  }
+  .card.fail { border-left: 4px solid var(--fail); }
+  .card.pass { border-left: 4px solid var(--pass); }
+  .card.error { border-left: 4px solid var(--error); }
+  .card h3 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .meta { color: var(--muted); font-size: 12px; margin: 2px 0 0; }
+  .badge {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+  }
+  .badge.pass { background: rgba(46,204,113,.15); color: var(--pass); }
+  .badge.fail { background: rgba(255,92,108,.15); color: var(--fail); }
+  .badge.error { background: rgba(201,162,39,.18); color: var(--error); }
+  .section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 14px 0 4px; }
+  .why { margin: 2px 0; }
+  .fix {
+    margin: 4px 0 0; background: var(--panel-2); border-radius: 8px; padding: 8px 12px;
+    font-size: 13.5px; white-space: pre-wrap;
+  }
+  .ctrl-row {
+    display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--line);
+  }
+  .ctrl-row:first-of-type { border-top: none; }
+  .ctrl-id {
+    flex: 0 0 120px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px; color: var(--accent);
+  }
+  .ctrl-body { flex: 1 1 auto; min-width: 0; }
+  .ctrl-title { font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip {
+    font-size: 11px; color: var(--muted); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px;
+  }
+  .summary-line { font-size: 14px; color: var(--muted); margin-bottom: 4px; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 32px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>GRC Compliance Report</h1>
+      <p class="sub" id="generated"></p>
+    </div>
+    <div class="score">
+      <div class="num" id="scoreNum">—</div>
+      <div class="lbl">Compliance score</div>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+  <p class="hint" id="hint"></p>
+  <div id="view"></div>
+
+  <footer>Generated by GRC Scanner · scores exclude checks that could not be assessed.</footer>
+</div>
+
+<script>
+const REPORT = /*__REPORT_DATA__*/null;
+
+const STATUS_TEXT = { pass: "Compliant", fail: "Not compliant", error: "Not assessed" };
+const esc = s => String(s == null ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function statusBadge(status) {
+  return `<span class="badge ${status}">${esc(STATUS_TEXT[status] || status)}</span>`;
+}
+
+// Summary tab: one card per check, with the plain-English reason, the fix, and
+// the controls it touches across every framework.
+function renderSummary() {
+  const checks = REPORT.checks || [];
+  const counts = { pass: 0, fail: 0, error: 0 };
+  checks.forEach(c => { counts[c.status] = (counts[c.status] || 0) + 1; });
+
+  let html = `<p class="summary-line">${counts.pass} compliant · `
+    + `${counts.fail} not compliant · ${counts.error} not assessed `
+    + `across ${checks.length} checks.</p>`;
+  html += `<div class="bar"><span style="width:${REPORT.compliance_score || 0}%"></span></div>`;
+
+  for (const c of checks) {
+    const frameworks = REPORT.frameworks || {};
+    const chips = Object.keys(frameworks).flatMap(fk =>
+      (c.compliance && c.compliance[fk] ? c.compliance[fk] : [])
+        .map(ctrl => `<span class="chip">${esc(frameworks[fk])}: ${esc(ctrl.id)}</span>`)
+    ).join("");
+
+    html += `<div class="card ${c.status}">
+      <h3>${esc(c.name)} ${statusBadge(c.status)}</h3>
+      <p class="meta">${esc(c.category)} · risk: ${esc(c.risk_level)}</p>
+      <div class="section-label">Why</div>
+      <p class="why">${esc(c.business_risk)}</p>
+      <div class="section-label">What needs doing</div>
+      <p class="fix">${esc(c.remediation)}</p>
+      ${chips ? `<div class="section-label">Maps to</div><div class="chips">${chips}</div>` : ""}
+    </div>`;
+  }
+  return html;
+}
+
+// Framework tab: list every control in that framework, drawn from each check
+// that maps to it, with the device's status and what to fix if not compliant.
+function renderFramework(fk) {
+  const checks = REPORT.checks || [];
+  const rows = [];
+  let met = 0, applicable = 0;
+
+  for (const c of checks) {
+    const controls = (c.compliance && c.compliance[fk]) ? c.compliance[fk] : [];
+    for (const ctrl of controls) {
+      if (c.status === "pass") { met++; applicable++; }
+      else if (c.status === "fail") { applicable++; }
+      // errored checks are shown but excluded from the met/applicable ratio
+      rows.push({ ctrl, check: c });
+    }
+  }
+
+  const name = (REPORT.frameworks || {})[fk] || fk;
+  let html = `<p class="summary-line"><strong>${esc(name)}</strong></p>`;
+  html += `<p class="summary-line">${met} of ${applicable} assessable controls met.</p>`;
+  html += `<div class="bar"><span style="width:${applicable ? Math.round(met / applicable * 100) : 0}%"></span></div>`;
+
+  html += `<div class="card">`;
+  for (const { ctrl, check } of rows) {
+    const needs = check.status === "pass"
+      ? `<p class="meta">Met via: ${esc(check.name)}.</p>`
+      : `<div class="section-label">Why</div><p class="why">${esc(check.business_risk)}</p>
+         <div class="section-label">What needs doing</div><p class="fix">${esc(check.remediation)}</p>`;
+    html += `<div class="ctrl-row">
+      <div class="ctrl-id">${esc(ctrl.id)}</div>
+      <div class="ctrl-body">
+        <div class="ctrl-title">${esc(ctrl.title)} ${statusBadge(check.status)}</div>
+        ${needs}
+      </div>
+    </div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function select(key) {
+  document.querySelectorAll(".tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.key === key));
+  const hint = document.getElementById("hint");
+  if (key === "summary") {
+    hint.textContent = "All checks. Pick a framework above to see how this device measures up to that standard.";
+    document.getElementById("view").innerHTML = renderSummary();
+  } else {
+    hint.textContent = "Each control below is judged from the matching device check. Red items list exactly what to remediate.";
+    document.getElementById("view").innerHTML = renderFramework(key);
+  }
+}
+
+function init() {
+  document.getElementById("scoreNum").textContent = (REPORT.compliance_score ?? 0) + "%";
+  const gen = REPORT.generated_at ? new Date(REPORT.generated_at).toLocaleString() : "";
+  document.getElementById("generated").textContent = gen ? `Scan generated ${gen}` : "";
+
+  const tabs = document.getElementById("tabs");
+  const entries = [["summary", "Summary"]].concat(Object.entries(REPORT.frameworks || {}));
+  tabs.innerHTML = entries.map(([k, label]) =>
+    `<div class="tab" data-key="${esc(k)}">${esc(label)}</div>`).join("");
+  tabs.querySelectorAll(".tab").forEach(t =>
+    t.addEventListener("click", () => select(t.dataset.key)));
+
+  select("summary");
+}
+
+init();
+</script>
+</body>
+</html>
+"""

@@ -38,4 +38,5 @@ Directions
 
 # Scan output (system-specific, may contain sensitive local data)
 reports/*.json
+reports/*.html
 !reports/.gitkeep
