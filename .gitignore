@@ -34,3 +34,8 @@ Thumbs.db
 
 # Internal/agent notes
 CLAUDE.md
+Directions
+
+# Scan output (system-specific, may contain sensitive local data)
+reports/*.json
+!reports/.gitkeep
