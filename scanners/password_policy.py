@@ -2,6 +2,7 @@ import subprocess
 
 from scanners.base import CheckResult
 from utils.parsing import parse_colon_table
+from utils.powershell import system_executable
 
 CHECK_ID = "password_policy"
 CHECK_NAME = "Local Password Policy"
@@ -14,7 +15,7 @@ def _run_net_accounts() -> str:
     # `net accounts` reads the local security policy and works without
     # elevation, unlike `secedit`, so it's used here over a PowerShell module.
     result = subprocess.run(
-        ["net", "accounts"],
+        [system_executable("net.exe"), "accounts"],
         capture_output=True,
         text=True,
         timeout=15,
