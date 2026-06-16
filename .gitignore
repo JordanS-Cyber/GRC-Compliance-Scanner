@@ -35,6 +35,7 @@ Thumbs.db
 # Internal/agent notes
 CLAUDE.md
 Directions
+requirements.txt
 
 # Scan output (system-specific, may contain sensitive local data)
 reports/*.json
