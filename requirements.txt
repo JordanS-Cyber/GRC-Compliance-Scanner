@@ -1,2 +1,0 @@
-# No third-party dependencies yet — Step 2 scanners use only the Python standard library.
-# Flask/FastAPI will be added here once the dashboard (Step 4) is built.
